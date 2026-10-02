@@ -1,127 +1,300 @@
-# ReflectAI — Mindful Reflection & Journal Assistant
+# ReflectAI — Journal & Reflection Assistant
 
-ReflectAI is a secure, user-authenticated journaling and cognitive reflection application built with **React**, **Node.js/Express**, **Gemini 3.6 Flash API**, and **Cloud Firestore** on **Google Cloud Run**.
+ReflectAI is an AI-powered journaling workspace that combines **Google Sign-In, Cloud Firestore, and Gemini** to help users write, reflect, organize thoughts, and identify recurring patterns across journal entries.
 
----
+The app supports multi-turn reflection conversations, AI-generated summaries, mood/theme extraction, automatic titles and tags, and a dashboard for reviewing recent reflection patterns.
 
-## Architecture & Security Highlights
+## Application Preview
 
-1. **User Identity & Isolation**: Authenticated via **Firebase Authentication** (Google Sign-In). Users cannot read, write, or query other users' journal entries.
-2. **Database Hardening**: Zero-trust **Cloud Firestore Security Rules** enforcing owner-bound isolation at `/users/{userId}/entries/{entryId}` and `/users/{userId}/interactions/{interactionId}`.
-3. **Resilient AI Pipeline**: Server-side Gemini processing with automatic model fallback ladder:
-   - Primary: `gemini-3.6-flash`
-   - High-Availability Fallback: `gemini-3.1-flash-lite`
-   - Dynamic Alias: `gemini-flash-latest`
-   - Deep Reasoning Fallback: `gemini-3.7-flash`
-4. **Zero-Hardcoding Hygiene**: All API keys managed via Google Cloud Secret Manager and injected at runtime.
+![ReflectAI welcome page](screenshots/welcome_page.png)
 
----
+## Features
 
-## 1. Prerequisites & GCP API Setup
+- **Google Sign-In** with Firebase Authentication
+- **Private journal storage** using Cloud Firestore
+- **User-scoped data access** enforced by Firestore Security Rules
+- **Multi-turn AI reflection** powered by Gemini
+- Five reflection modes:
+  - Deep Reflection
+  - Brainstorming
+  - Gratitude & Joy
+  - Problem Solving
+  - Freeform
+- AI extraction of:
+  - Mood
+  - Sentiment score
+  - Core themes
+- **AI-generated titles and tags**
+- **Cognitive summaries** with:
+  - Key takeaways
+  - Core themes
+  - Mood/tone
+  - Actionable prompts
+- **Weekly pattern analysis** across recent reflections
+- Search, favorites, filtering, and journal history
+- Markdown export/copy support
+- Automatic saving to Firestore
+- Responsive dark UI
 
-Ensure you have the [Google Cloud SDK (gcloud CLI)](https://cloud.google.com/sdk/docs/install) installed and authenticated:
+## How It Works
 
-```bash
-# Set your active GCP project
-gcloud config set project YOUR_PROJECT_ID
-
-# Enable required Google Cloud services
-gcloud services enable \
-  run.googleapis.com \
-  secretmanager.googleapis.com \
-  firestore.googleapis.com \
-  cloudbuild.googleapis.com
+```text
+User
+  │
+  ├── Google Sign-In
+  │       ↓
+  │   Firebase Authentication
+  │
+  ├── Journal Entry
+  │       ↓
+  │   React Frontend
+  │       ↓
+  │   Express API
+  │       ↓
+  │   Gemini
+  │       ↓
+  │   Reflection + Mood + Themes
+  │
+  └── Journal Data
+          ↓
+      Cloud Firestore
+          ↓
+   User-scoped Security Rules
 ```
 
----
+Gemini requests are handled by the server rather than exposing the Gemini API key in the browser.
 
-## 2. Secret Manager Configuration
+## Tech Stack
 
-Store your Gemini API key in Google Cloud Secret Manager:
+| Layer | Technology |
+|---|---|
+| Frontend | React + TypeScript |
+| Styling | Tailwind CSS |
+| Backend | Node.js + Express |
+| AI | Google Gemini API |
+| Authentication | Firebase Authentication |
+| Database | Cloud Firestore |
+| Icons | Lucide React |
+| Charts | Recharts |
+| Build Tool | Vite |
+| Deployment | Google Cloud Run |
 
-```bash
-# Create and populate the secret
-gcloud secrets create GEMINI_API_KEY --replication-policy="automatic"
-echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets versions add GEMINI_API_KEY --data-file=-
+## Project Structure
 
-# Grant the default Cloud Run service account access to read the secret
-PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format="value(projectNumber)")
-
-gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
+```text
+ReflectAI-Journal-Reflection-Assistant/
+│
+├── screenshots/
+│   └── welcome_page.png
+│
+├── src/
+│   ├── components/
+│   │   ├── InsightsDashboard.tsx
+│   │   ├── LandingPage.tsx
+│   │   ├── Navbar.tsx
+│   │   ├── ReflectionEditor.tsx
+│   │   ├── Sidebar.tsx
+│   │   └── SummaryCard.tsx
+│   │
+│   ├── lib/
+│   │   ├── firebase.ts
+│   │   └── geminiClient.ts
+│   │
+│   ├── App.tsx
+│   ├── index.css
+│   ├── main.tsx
+│   └── types.ts
+│
+├── firebase-applet-config.json
+├── firestore.rules
+├── server.ts
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+└── .env.example
 ```
-
----
-
-## 3. Firestore Database & Security Rules
-
-Deploy the owner-bound security rules to Cloud Firestore:
-
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // User root document
-    match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-
-      // Isolated user journal entries subcollection
-      match /entries/{entryId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      // Isolated user interaction history subcollection
-      match /interactions/{interactionId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-    }
-  }
-}
-```
-
----
-
-## 4. Cloud Run Deployment
-
-Build and deploy the application container to Google Cloud Run:
-
-```bash
-# Deploy service to Cloud Run with Secret Manager mounting
-gcloud run deploy reflect-ai \
-  --source . \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest \
-  --port 3000
-```
-
----
-
-## 5. Campaign Verification Labeling
-
-Apply the mandatory challenge verification label to your deployed Cloud Run service:
-
-```bash
-gcloud run services update reflect-ai \
-  --update-labels=dev-tutorial=cloud-run-ai-challenge \
-  --region=us-central1
-```
-
----
 
 ## Local Development
 
+### 1. Clone the repository
+
 ```bash
-# Install dependencies
+git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+cd ReflectAI-Journal-Reflection-Assistant
+```
+
+### 2. Install dependencies
+
+```bash
 npm install
+```
 
-# Start development server
+### 3. Configure environment variables
+
+Create a `.env` file:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+The Gemini key is read by the Express backend through `process.env.GEMINI_API_KEY`.
+
+Do **not** commit `.env` to GitHub.
+
+### 4. Configure Firebase
+
+Create/configure a Firebase project with:
+
+- Firebase Authentication
+- Google Sign-In provider
+- Cloud Firestore
+
+Add the required Firebase web configuration to the project.
+
+Deploy the included Firestore rules:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+### 5. Start the development server
+
+```bash
 npm run dev
+```
 
-# Build for production
+The application will run on the configured local server.
+
+## Production Build
+
+```bash
 npm run build
-
-# Start production server
 npm start
 ```
+
+## Deployment
+
+ReflectAI can be deployed as a Node.js application on **Google Cloud Run**.
+
+For production:
+
+1. Store `GEMINI_API_KEY` in a secret manager.
+2. Inject the secret into the Cloud Run service as an environment variable.
+3. Build the application.
+4. Deploy the service to Cloud Run.
+5. Configure Firebase Authentication with the deployed domain.
+6. Verify the Firestore rules before using the application with real user data.
+
+## Security Design
+
+ReflectAI uses several layers of protection:
+
+### Authentication
+
+Users authenticate through Firebase Authentication using Google Sign-In.
+
+### Firestore isolation
+
+Journal entries are stored under a user-specific path:
+
+```text
+/users/{userId}/entries/{entryId}
+```
+
+The Firestore rules require the authenticated user's UID to match the `{userId}` in the document path.
+
+### Server-side Gemini API key
+
+The Gemini API key is accessed only by the Express backend:
+
+```ts
+const apiKey = process.env.GEMINI_API_KEY;
+```
+
+The frontend communicates with backend endpoints such as:
+
+```text
+/api/gemini/reflect
+/api/gemini/summarize
+/api/gemini/suggest-meta
+/api/gemini/pattern-summary
+```
+
+This prevents the Gemini secret from being placed directly in frontend JavaScript.
+
+## Important Firebase Configuration Note
+
+`firebase-applet-config.json` contains Firebase web-app configuration, including a Firebase/Google API key.
+
+Firebase web API keys are generally identifiers rather than passwords or service-account credentials, so their presence in a browser application is normal. However, the key should still be **properly restricted in Google Cloud** and should not be treated as a secret substitute.
+
+Never place any of the following in the repository:
+
+- Gemini API keys
+- Service-account JSON files
+- Private keys
+- Passwords
+- Database credentials
+- OAuth client secrets
+- `.env` files containing real secrets
+
+The repository's `.gitignore` excludes `.env` files.
+
+## Firestore Data Model
+
+```text
+users/
+└── {userId}/
+    ├── entries/
+    │   └── {entryId}
+    │
+    └── interactions/
+        └── {interactionId}
+```
+
+Each user's journal data is accessed using their authenticated Firebase UID.
+
+## AI Capabilities
+
+### Reflection
+
+Gemini receives the current journal prompt and relevant conversation history and returns:
+
+- Reflection response
+- Mood
+- Sentiment score
+- Core themes
+
+### Cognitive Summary
+
+A journal entry and its reflection conversation can be converted into a structured summary containing:
+
+- Executive reflection
+- Key takeaways
+- Core themes
+- Mood/tone
+- Actionable prompts
+
+### Pattern Analysis
+
+The Insights dashboard analyzes recent structured mood/theme information to identify recurring themes and changes in sentiment without sending the full historical journal text for the weekly pattern summary.
+
+## Why This Project
+
+ReflectAI was built as a practical example of combining:
+
+- AI application development
+- Full-stack TypeScript
+- Server-side API integration
+- Authentication
+- Cloud database design
+- Security rules
+- Structured AI outputs
+- Data visualization
+- Cloud deployment
+
+It demonstrates how an AI feature can be integrated into a real application rather than being limited to a standalone chatbot.
+
+## Disclaimer
+
+ReflectAI is a journaling and reflection tool. It is **not a medical, psychological, or emergency service** and should not be used as a replacement for professional care.
